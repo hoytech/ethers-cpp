@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "chai": "^4.3.4",
+    "ethers": "^5.3.1",
+    "json-stable-stringify": "^1.0.1"
+  }
+}
