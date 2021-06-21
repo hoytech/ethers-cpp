@@ -80,7 +80,19 @@ class SolidityAbi {
 
 
     void _init(tao::json::value &abi) {
+        if (abi.is_array()) {
+            _init2(abi);
+        } else if (abi.is_object() && abi.at("abi").is_array()) {
+            _init2(abi.at("abi"));
+        } else {
+            throw hoytech::error("SolidityAbi specification not in expected format");
+        }
+    }
+
+    void _init2(tao::json::value &abi) {
         for (auto &item : abi.get_array()) {
+            if (!item.optional<std::string>("name")) continue; // constructor, etc
+
             auto name = item.at("name").get_string();
             auto type = item.at("type").get_string();
             auto format = _getFormat(name, item.at("inputs"));
