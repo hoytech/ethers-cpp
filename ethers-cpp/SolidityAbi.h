@@ -56,13 +56,14 @@ class SolidityAbi {
 
         for (auto &pair : output2.get_object()) output[pair.first] = pair.second;
 
-        return output;
+        return { { "name", event.name }, { "args", output } };
     }
 
 
 
   private:
     struct Event {
+        std::string name;
         std::vector<tao::json::value> indexedItems;
         std::vector<tao::json::value> nonIndexedItems;
     };
@@ -80,12 +81,15 @@ class SolidityAbi {
 
     void _init(tao::json::value &abi) {
         for (auto &item : abi.get_array()) {
+            auto name = item.at("name").get_string();
             auto type = item.at("type").get_string();
-            auto format = _getFormat(item.at("name").get_string(), item.at("inputs"));
+            auto format = _getFormat(name, item.at("inputs"));
             auto formatHash = keccak256(format);
 
             if (type == "event") {
                 Event e;
+
+                e.name = name;
 
                 for (auto &input : item.at("inputs").get_array()) {
                     if (input.at("indexed").get_boolean()) e.indexedItems.push_back(input);
@@ -99,14 +103,12 @@ class SolidityAbi {
                 f.item = item;
                 f.sigHash = formatHash.substr(0, 4);
 
-                auto funcName = item.at("name").get_string();
-
-                if (functions.find(funcName) != functions.end()) {
-                    std::cerr << "WARNING: Duplicate solidity function name: " << funcName << std::endl;
+                if (functions.find(name) != functions.end()) {
+                    std::cerr << "WARNING: Duplicate solidity function name: " << name << std::endl;
                     continue;
                 }
 
-                functions.emplace(funcName, std::move(f));
+                functions.emplace(name, std::move(f));
             }
         }
     }

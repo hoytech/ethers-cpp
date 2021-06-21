@@ -28,9 +28,12 @@ let interface = new ethers.utils.Interface(abi);
     let res = JSON.parse(child_process.execSync(`./testHarness decodeEvent ${topics} ${data}`).toString());
 
     expect(res).to.deep.equal({
-        from: '0x1111111111111111111111111111111111111111',
-        to: '0x2222222222222222222222222222222222222222',
-        value: ethers.BigNumber.from(data).toString(),
+        name: 'Transfer',
+        args: {
+            from: '0x1111111111111111111111111111111111111111',
+            to: '0x2222222222222222222222222222222222222222',
+            value: ethers.BigNumber.from(data).toString(),
+        },
     });
 }
 
