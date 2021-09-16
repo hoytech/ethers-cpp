@@ -59,6 +59,10 @@ class SolidityAbi {
         return { { "name", event.name }, { "args", output } };
     }
 
+    std::string getEventHash(const std::string &eventName) {
+        return eventNameToHash.at(eventName);
+    }
+
 
 
   private:
@@ -69,6 +73,7 @@ class SolidityAbi {
     };
 
     std::unordered_map<std::string, Event> events;
+    std::unordered_map<std::string, std::string> eventNameToHash;
 
 
     struct Function {
@@ -108,6 +113,7 @@ class SolidityAbi {
                     else e.nonIndexedItems.push_back(input);
                 }
 
+                eventNameToHash.emplace(name, formatHash);
                 events.emplace(formatHash, std::move(e));
             } else if (type == "function") {
                 Function f;
