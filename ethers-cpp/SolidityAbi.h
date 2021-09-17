@@ -19,6 +19,65 @@
 namespace EthersCpp {
 
 
+
+
+static inline std::string normaliseStr(std::string_view str, size_t numBytes = 32) {
+    if (str.length() > numBytes) throw hoytech::error("input exceeds numBytes");
+    return std::string(numBytes - str.length(), '\0') + std::string(str);
+}
+
+static std::string normaliseHexStr(std::string_view hexStr, size_t numBytes = 32) {
+    std::string str(hexStr);
+    if (str.substr(0, 2) == "0x") str = str.substr(2);
+    str.replace(0, 0, std::string(numBytes*2 - str.length(), '0'));
+    return hoytech::from_hex(str);
+}
+
+static std::string normaliseMpz(mpz_class &num, size_t numBytes = 32) {
+    auto str = num.get_str(16);
+    if (str.length() > numBytes*2) throw hoytech::error("input exceeds numBytes");
+    return normaliseHexStr(str, numBytes);
+}
+
+static std::string normaliseUnsigned(uint64_t num, size_t numBytes = 32) {
+    mpz_class numMpz{num};
+    return normaliseMpz(numMpz, numBytes);
+}
+
+static mpz_class twoToThe256 = mpz_class("115792089237316195423570985008687907853269984665640564039457584007913129639936");
+
+static std::string normaliseSignedMpz(mpz_class &numMpz, size_t numBytes = 32) {
+    if (numMpz < 0) numMpz += twoToThe256;
+
+    return normaliseMpz(numMpz, numBytes);
+}
+
+static std::string normaliseSigned(int64_t num, size_t numBytes = 32) {
+    mpz_class numMpz{num};
+
+    if (numMpz < 0) numMpz += twoToThe256;
+
+    return normaliseMpz(numMpz, numBytes);
+}
+
+static mpz_class convertToMpz(std::string_view str) {
+    if (str.size() == 0) return mpz_class(0);
+    std::string s = hoytech::to_hex(str);
+    return mpz_class{s, 16};
+}
+
+static mpz_class convertToMpzSigned(std::string_view str) {
+    auto num = convertToMpz(str);
+
+    if (mpz_tstbit(num.get_mpz_t(), 255)) {
+        return -(twoToThe256 - num);
+    }
+
+    return num;
+}
+
+
+
 class SolidityAbi {
   public:
     SolidityAbi(std::string_view abi) {
@@ -429,59 +488,6 @@ class SolidityAbi {
         }
 
         return output;
-    }
-
-
-
-
-    std::string normaliseHexStr(std::string_view hexStr, size_t numBytes = 32) {
-        std::string str(hexStr);
-        if (str.substr(0, 2) == "0x") str = str.substr(2);
-        str.replace(0, 0, std::string(numBytes*2 - str.length(), '0'));
-        return hoytech::from_hex(str);
-    }
-
-    std::string normaliseMpz(mpz_class &num, size_t numBytes = 32) {
-        auto str = num.get_str(16);
-        if (str.length() > numBytes*2) throw hoytech::error("input exceeds numBytes");
-        return normaliseHexStr(str, numBytes);
-    }
-
-    std::string normaliseUnsigned(uint64_t num, size_t numBytes = 32) {
-        mpz_class numMpz{num};
-        return normaliseMpz(numMpz, numBytes);
-    }
-
-    mpz_class twoToThe256 = mpz_class("115792089237316195423570985008687907853269984665640564039457584007913129639936");
-
-    std::string normaliseSignedMpz(mpz_class &numMpz, size_t numBytes = 32) {
-        if (numMpz < 0) numMpz += twoToThe256;
-
-        return normaliseMpz(numMpz, numBytes);
-    }
-
-    std::string normaliseSigned(int64_t num, size_t numBytes = 32) {
-        mpz_class numMpz{num};
-
-        if (numMpz < 0) numMpz += twoToThe256;
-
-        return normaliseMpz(numMpz, numBytes);
-    }
-
-    mpz_class convertToMpz(std::string_view str) {
-        if (str.size() == 0) return mpz_class(0);
-        std::string s = hoytech::to_hex(str);
-        return mpz_class{s, 16};
-    }
-
-    mpz_class convertToMpzSigned(std::string_view str) {
-        auto num = convertToMpz(str);
-
-        if (mpz_tstbit(num.get_mpz_t(), 255)) {
-            return -(twoToThe256 - num);
-        }
-
-        return num;
     }
 };
 
