@@ -89,7 +89,7 @@ class SolidityAbi {
         _init(abi);
     }
 
-    std::string encodeFunctionData(std::string_view funcName, tao::json::value &input) {
+    std::string encodeFunctionData(std::string_view funcName, const tao::json::value &input) {
         auto it = functions.find(std::string(funcName));
         if (it == functions.end()) throw hoytech::error("unable to encode unknown solidity abi function: ", funcName);
         auto &function = it->second;
@@ -387,7 +387,7 @@ class SolidityAbi {
         return process(tree);
     }
 
-    std::string _abiEncode(std::vector<tao::json::value> &rootItems, tao::json::value &input) {
+    std::string _abiEncode(std::vector<tao::json::value> &rootItems, const tao::json::value &input) {
         std::string output;
         std::queue<std::function<void()>> pending;
 
@@ -402,7 +402,7 @@ class SolidityAbi {
             }
         };
 
-        std::function<void(ParseNode &, tao::json::value &, uint64_t)> process = [&](ParseNode &node, tao::json::value &item, uint64_t offset){
+        std::function<void(ParseNode &, const tao::json::value &, uint64_t)> process = [&](ParseNode &node, const tao::json::value &item, uint64_t offset){
             if (node.dynamic) {
                 auto slotLocation = output.size();
                 append("X"); // slot for pointer, will be padded to 32 bytes
@@ -413,7 +413,7 @@ class SolidityAbi {
                     if (node.arrayOf) {
                         if (node.fixedArraySize == -1) append(normaliseUnsigned(item.get_array().size()));
                         uint64_t newOffset = output.size();
-                        for (auto &i : item.get_array()) {
+                        for (const auto &i : item.get_array()) {
                             process(*node.arrayOf, i, newOffset);
                         }
                     } else if (node.base == "tuple") {
@@ -435,7 +435,7 @@ class SolidityAbi {
                 });
             } else {
                 if (node.arrayOf) {
-                    for (auto &i : item.get_array()) {
+                    for (const auto &i : item.get_array()) {
                         process(*node.arrayOf, i, offset);
                     }
                 } else if (node.base == "tuple") {
