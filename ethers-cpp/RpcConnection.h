@@ -10,6 +10,7 @@
 #include <uWebSockets/src/uWS.h>
 #include <tao/json.hpp>
 
+#include "ethers-cpp/SolidityAbi.h"
 
 
 namespace EthersCpp {
@@ -101,6 +102,50 @@ class RpcConnection {
     void send(RpcQueryMsg &&msg) {
         rpcQueryQueue.push_move(msg);
         hubTrigger->send();
+    }
+
+    tao::json::value sendSync(const std::string &method, const tao::json::value &params) {
+        std::mutex m;
+        std::unique_lock<std::mutex> lock(m);
+        std::condition_variable cv;
+
+        bool done = false;
+        tao::json::value result;
+
+        send(RpcQueryMsg{
+            std::move(method),
+            std::move(params),
+            [&](const tao::json::value &r){
+                done = true;
+                result = r;
+                std::lock_guard<std::mutex> lock(m);
+                cv.notify_one();
+            },
+            [&](const tao::json::value &r){
+                done = true;
+                result = r;
+                std::lock_guard<std::mutex> lock(m);
+                cv.notify_one();
+            }
+        });
+
+        cv.wait(lock, [&]{return done;});
+
+        return result;
+    }
+
+    tao::json::value ethCallSync(const std::string &to, EthersCpp::SolidityAbi &abi, const std::string &func, const tao::json::value &data) {
+        std::string encodedData = abi.encodeFunctionData(func, data);
+
+        auto r = sendSync("eth_call", tao::json::value::array({
+            {
+                { "to", to },
+                { "data", to_hex(encodedData, true) },
+            },
+            "latest"
+        }));
+
+        return abi.decodeFunctionResult(func, hoytech::from_hex(r.get_string()));
     }
 
     void trigger() {
