@@ -7,6 +7,7 @@
 
 #include <hoytech/protected_queue.h>
 #include <hoytech/timer.h>
+#include <hoytech/hex.h>
 #include <uWebSockets/src/uWS.h>
 #include <tao/json.hpp>
 
@@ -140,7 +141,7 @@ class RpcConnection {
         auto r = sendSync("eth_call", tao::json::value::array({
             {
                 { "to", to },
-                { "data", to_hex(encodedData, true) },
+                { "data", hoytech::to_hex(encodedData, true) },
             },
             "latest"
         }));
@@ -218,12 +219,12 @@ class RpcConnection {
             //std::cerr << "RECV (" << rpcId << "): " << tao::json::to_string(msg.at("result")) << std::endl;
 
             if (rpcMsg.method == "eth_subscribe") {
-                rpcSubscriptionLookup.emplace(from_hex(msg.at("result").get_string()), std::move(rpcMsg));
+                rpcSubscriptionLookup.emplace(hoytech::from_hex(msg.at("result").get_string()), std::move(rpcMsg));
             } else {
                 rpcMsg.cb(msg.at("result"));
             }
         } else if (msg.find("method") && msg.at("method").get_string() == "eth_subscription") {
-            std::string subsId = from_hex(msg.at("params").at("subscription").get_string());
+            std::string subsId = hoytech::from_hex(msg.at("params").at("subscription").get_string());
 
             auto it = rpcSubscriptionLookup.find(subsId);
             if (it == rpcSubscriptionLookup.end()) {
