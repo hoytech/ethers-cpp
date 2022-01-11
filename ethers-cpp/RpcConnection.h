@@ -6,6 +6,7 @@
 #include <mutex>
 
 #include <hoytech/protected_queue.h>
+#include <hoytech/time.h>
 #include <hoytech/timer.h>
 #include <hoytech/hex.h>
 #include <uWebSockets/src/uWS.h>
@@ -26,6 +27,7 @@ class RpcConnection {
         tao::json::value params;
         RpcQueryCallback cb;
         RpcQueryCallback errCb = [](const tao::json::value &){};
+        uint64_t creation = hoytech::curr_time_us();
     };
 
 
@@ -50,11 +52,7 @@ class RpcConnection {
         hubGroup = hub.createGroup<uWS::CLIENT>(uWS::PERMESSAGE_DEFLATE);
 
         hubGroup->onConnection([this](uWS::WebSocket<uWS::CLIENT> *ws, uWS::HttpRequest req) {
-            if (currWs) {
-                currWs->terminate();
-                clearCurrentConnection();
-            }
-
+            if (currWs) terminateCurrentConnection();
             currWs = ws;
 
             if (onConnect) onConnect();
@@ -62,9 +60,7 @@ class RpcConnection {
 
         hubGroup->onDisconnection([this](uWS::WebSocket<uWS::CLIENT> *ws, int code, char *message, size_t length) {
             std::cout << "Websocket disconnection" << std::endl;
-            if (currWs == ws) {
-                clearCurrentConnection();
-            }
+            if (currWs == ws) clearCurrentConnection();
         });
 
         hubGroup->onError([](void *conn_id) {
@@ -81,6 +77,7 @@ class RpcConnection {
                 handleMessage(msg);
             } catch (std::exception &e) {
                 std::cerr << "Handle message failure: " << e.what() << ". received: " << msgStr << std::endl;
+                terminateCurrentConnection();
             }
         });
 
@@ -146,7 +143,9 @@ class RpcConnection {
             "latest"
         }));
 
-        return abi.decodeFunctionResult(func, hoytech::from_hex(r.get_string()));
+        if (r.is_object()) return r;
+
+        return { { "result", abi.decodeFunctionResult(func, hoytech::from_hex(r.get_string())) } };
     }
 
     void trigger() {
@@ -160,9 +159,23 @@ class RpcConnection {
 
   private:
 
+    void terminateCurrentConnection() {
+        currWs->terminate();
+        clearCurrentConnection();
+    }
+
     void clearCurrentConnection() {
+        tao::json::value err = { { "error", "reset" } };
+
+        for (const auto &[key, value] : rpcQueryLookup) value.errCb(err);
         rpcQueryLookup.clear();
+
+        for (const auto &[key, value] : rpcSubscriptionLookup) value.errCb(err);
         rpcSubscriptionLookup.clear();
+
+        auto tempQueue = rpcQueryQueue.pop_all_no_wait();
+        for (const auto &value : tempQueue) value.errCb(err);
+
         currWs = nullptr;
     }
 
@@ -172,6 +185,16 @@ class RpcConnection {
         if (!currWs) {
             hub.connect(url, nullptr, { }, 5000, hubGroup);
             return;
+        }
+
+        for (const auto &[key, value] : rpcQueryLookup) {
+            auto now = hoytech::curr_time_us();
+
+            if (value.creation + 60 * 1'000'000UL < now) {
+                std::cerr << "Query timeout, reseting connection..." << std::endl;
+                terminateCurrentConnection();
+                return;
+            }
         }
 
         auto tempQueue = rpcQueryQueue.pop_all_no_wait();
@@ -236,7 +259,7 @@ class RpcConnection {
 
             rpcMsg.cb(msg.at("params").at("result"));
         } else {
-            std::cerr << "Unexpected JSON-RPC message: " << tao::json::to_string(msg) << std::endl;
+            throw hoytech::error("Unexpected JSON-RPC message");
         }
     }
 };
