@@ -68,6 +68,8 @@ class RpcConnection {
         });
 
         hubGroup->onMessage2([this](uWS::WebSocket<uWS::CLIENT> *ws, char *message, size_t length, uWS::OpCode opCode, size_t compressedSize) {
+            //std::cout << "Compression in: " << compressedSize << " -> " << length << std::endl;
+
             std::string_view msgStr(message, length);
 
             try {
@@ -100,6 +102,10 @@ class RpcConnection {
     void send(RpcQueryMsg &&msg) {
         rpcQueryQueue.push_move(msg);
         hubTrigger->send();
+    }
+
+    tao::json::value sendBatchSync(const tao::json::value &batch) {
+        return sendSync("", batch);
     }
 
     tao::json::value sendSync(const std::string &method, const tao::json::value &params) {
@@ -202,12 +208,24 @@ class RpcConnection {
         for (auto &msg : tempQueue) {
             uint64_t queryId = nextRpcQueryId++;
 
-            tao::json::value jsonMsg = {
-                { "method", msg.method },
-                { "params", msg.params},
-                { "id", queryId },
-                { "jsonrpc", "2.0" },
-            };
+            tao::json::value jsonMsg;
+
+            if (msg.method.size() == 0 && msg.params.is_array()) {
+                // batch method
+                jsonMsg = msg.params;
+
+                for (auto &e : jsonMsg.get_array()) {
+                    e["id"] = queryId;
+                    e["jsonrpc"] = "2.0";
+                }
+            } else {
+                jsonMsg = {
+                    { "method", msg.method },
+                    { "params", msg.params},
+                    { "id", queryId },
+                    { "jsonrpc", "2.0" },
+                };
+            }
 
             std::string encoded = tao::json::to_string(jsonMsg);
 
@@ -216,13 +234,19 @@ class RpcConnection {
             //std::cout << "SENDING: " << queryId << ": " << encoded << std::endl;
             size_t compressedSize;
             currWs->send(encoded.data(), encoded.size(), uWS::OpCode::TEXT, nullptr, nullptr, true, &compressedSize);
-            //std::cout << "Compression: " << encoded.size() << " -> " << compressedSize << std::endl;
+            //std::cout << "Compression out: " << encoded.size() << " -> " << compressedSize << std::endl;
         }
     }
 
     void handleMessage(tao::json::value &msg) {
-        if (msg.find("id")) {
-            uint64_t rpcId = msg.at("id").get_unsigned();
+        if (msg.is_array() || msg.find("id")) {
+            uint64_t rpcId;
+
+            if (msg.is_array()) {
+                rpcId = msg.get_array().at(0).at("id").get_unsigned();
+            } else {
+                rpcId = msg.at("id").get_unsigned();
+            }
 
             auto it = rpcQueryLookup.find(rpcId);
             if (it == rpcQueryLookup.end()) {
@@ -233,16 +257,24 @@ class RpcConnection {
             auto rpcMsg = std::move(it->second);
             rpcQueryLookup.erase(rpcId);
 
-            if (msg.find("error")) {
+            if (!msg.is_array() && msg.find("error")) {
                 std::cerr << "Got RPC error response (" << rpcId << "): " << msg << std::endl;
                 rpcMsg.errCb(msg);
                 return;
             }
 
-            //std::cerr << "RECV (" << rpcId << "): " << tao::json::to_string(msg.at("result")) << std::endl;
+            //std::cerr << "RECV (" << rpcId << "): " << tao::json::to_string(msg) << std::endl;
 
             if (rpcMsg.method == "eth_subscribe") {
                 rpcSubscriptionLookup.emplace(hoytech::from_hex(msg.at("result").get_string()), std::move(rpcMsg));
+            } else if (msg.is_array()) {
+                tao::json::value res = tao::json::empty_array;
+
+                for (auto &e : msg.get_array()) {
+                    res.push_back(e.at("result"));
+                }
+
+                rpcMsg.cb(res);
             } else {
                 rpcMsg.cb(msg.at("result"));
             }
